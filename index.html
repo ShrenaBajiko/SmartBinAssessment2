@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#123047">
+  <title>SCU Smart Waste Terminal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">PROG6002 · WEEK 4</span><h1>SCU Smart Waste Terminal</h1></div>
+    <div class="header-actions">
+      <button id="tabletToggle" class="header-button" aria-pressed="false">Tablet mode</button>
+      <button id="logToggle" class="header-button log-toggle" aria-expanded="true" aria-controls="logPanel">
+        Hide log <span id="errorBadge" class="badge" hidden>0</span>
+      </button>
+      <div id="overallStatus" class="pill warn">Not started</div>
+    </div>
+  </header>
+
+  <main>
+    <section id="logPanel" class="panel log-panel">
+      <div class="panel-head">
+        <h2>Event &amp; error log</h2>
+        <div class="log-tools">
+          <label class="inline"><input id="errorsOnly" type="checkbox"> Errors only</label>
+          <button id="clearLogButton" class="small">Clear</button>
+        </div>
+      </div>
+      <ol id="eventLog" class="log"></ol>
+    </section>
+
+    <section class="camera-card">
+      <div class="video-wrap">
+        <video id="camera" autoplay muted playsinline></video>
+        <canvas id="detectionOverlay" class="detection-overlay"></canvas>
+        <div id="regionGuide" class="region-guide" hidden><span>Fill this box with the item</span></div>
+        <div id="cameraMessage" class="overlay">Tap “Test camera only” or “Start camera &amp; model”</div>
+      </div>
+      <div id="binBadge" class="bin-badge" aria-live="polite">
+        <strong>—</strong><span>Start the camera and hold one item in front of it.</span>
+      </div>
+      <div class="result">
+        <span>Detected as</span>
+        <strong id="className">—</strong>
+        <div class="confidence"><div id="confidenceBar"></div></div>
+        <span id="confidenceText">0%</span>
+      </div>
+      <div id="predictions" class="predictions"></div>
+      <div class="actions">
+        <button id="startButton" class="primary">Start camera &amp; model</button>
+        <button id="cameraTestButton">Test camera only</button>
+        <button id="stopButton" disabled>Stop</button>
+      </div>
+      <p class="help">“Test camera only” opens the camera without loading the model or publishing anything.</p>
+
+      <details class="diagnostics" open>
+        <summary>What the model sees &amp; diagnostics</summary>
+        <div class="diag-grid">
+          <figure>
+            <canvas id="inputPreview" width="224" height="224"></canvas>
+            <figcaption id="inputStats">Model input appears here while classifying.</figcaption>
+          </figure>
+          <div class="diag-controls">
+            <label>Classification region
+              <select id="region">
+                <option value="square" selected>Centre square</option>
+                <option value="zoom15">Centre square, zoom 1.5×</option>
+                <option value="zoom2">Centre square, zoom 2×</option>
+                <option value="full">Whole frame</option>
+              </select>
+            </label>
+            <p class="help">Used by the image classifier pipeline (for example your Teachable Machine model), and by the
+              “centre region” fallback. Only the area inside the dashed box is classified, so the item should fill most of it.</p>
+            <label>Classify a photo instead of live video
+              <input id="photoInput" type="file" accept="image/*">
+            </label>
+            <div class="actions">
+              <button id="selfTestButton">Run model self-test</button>
+            </div>
+            <p class="help">The self-test checks that the bundled model computes correctly on this device's compute backend.</p>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>Classifier configuration</h2>
+      <label>Pipeline
+        <select id="pipeline">
+          <option value="coco" selected>COCO object detection → bin (no training needed)</option>
+          <option value="classify">Image classifier: your Teachable Machine model (or a bundled model)</option>
+          <option value="hybrid">COCO detection, then the image classifier on the detected object</option>
+        </select>
+      </label>
+      <div id="detectionFields" class="source-fields">
+        <p class="help"><strong>COCO-SSD</strong> (Apache-2.0, 9&nbsp;MB) finds everyday objects such as bottles, cups,
+          fruit, books and phones. The largest object's label decides the bin (see <em>Bin mapping</em> below). People and furniture
+          are ignored. Items COCO does not know (cans, boxes, crumpled paper, batteries) are not detected.</p>
+        <div class="grid two">
+          <label>Minimum detection score <input id="detScore" type="number" min="0.1" max="0.95" step="0.05" value="0.4"></label>
+          <label>When nothing is detected
+            <select id="fallback">
+              <option value="none" selected>Report “No item” (publish nothing)</option>
+              <option value="centre">Classify the centre region instead</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="classifierFields">
+      <label>Image classifier
+        <select id="modelSource">
+          <option value="url" selected>Teachable Machine model URL</option>
+          <option value="files">Upload model files (Teachable Machine export or TF.js)</option>
+          <option value="default">Bundled: EcoVision MobileNetV3 (10 materials)</option>
+          <option value="lite">Bundled: Lite TrashNet MobileNetV2 (6 materials)</option>
+        </select>
+      </label>
+      <p class="help">Each class is mapped to a bin under <em>Bin mapping</em>. Class names such as <code>recycling</code>,
+        <code>landfill</code>, <code>organics</code> or <code>yellow</code> are mapped automatically; a class named
+        <code>unknown</code> or <code>background</code> shows “No item”.</p>
+      <div id="defaultSourceFields" class="source-fields" hidden>
+        <p class="help"><a href="https://huggingface.co/AmadFR/ecovision_mobilenetv3" target="_blank" rel="noopener">EcoVision</a>
+          MobileNetV3-Large (MIT licence, by AmadFR) trained on about 20,000 images: battery, biological, cardboard, clothes,
+          glass, metal, paper, plastic, shoes, trash. 8.4&nbsp;MB download.</p>
+      </div>
+      <div id="liteSourceFields" class="source-fields" hidden>
+        <p class="help">MobileNetV2 (0.5 width, 160×160) trained on TrashNet: cardboard, glass, metal, paper, plastic, trash.
+          1.4&nbsp;MB and about 5× less computation. Needs one item on a plain background; tends to over-predict cardboard/paper.</p>
+      </div>
+      <div id="urlSourceFields" class="source-fields">
+        <label>Teachable Machine model URL
+          <input id="modelUrl" inputmode="url" placeholder="https://teachablemachine.withgoogle.com/models/MODEL_ID/">
+        </label>
+      </div>
+      <div id="fileSourceFields" class="source-fields" hidden>
+        <label>Model files: select <code>model.json</code>, all <code>.bin</code> weight files, and <code>metadata.json</code> or <code>labels.txt</code>
+          <input id="modelFiles" type="file" multiple accept=".json,.bin,.txt,application/json,application/octet-stream,text/plain">
+        </label>
+        <ul id="modelFileList" class="file-list"></ul>
+        <label>Input normalisation
+          <select id="normalization">
+            <option value="-1to1">[-1, 1] (Teachable Machine / MobileNet)</option>
+            <option value="0to1">[0, 1]</option>
+            <option value="0to255">[0, 255] (raw pixels)</option>
+          </select>
+        </label>
+        <p class="help">Accepts TensorFlow.js layers or graph models, including a Teachable Machine “TensorFlow.js” export.
+          The files stay on this device; they are not uploaded to any server.</p>
+      </div>
+      </div>
+      <details class="bin-mapping">
+          <summary>Bin mapping: label → bin (editable)</summary>
+          <p class="help">Defaults follow common Australian kerbside rules and are defined in <code>bins.js</code>.
+            Councils differ, so adjust them here; changes are saved on this device and highlighted.</p>
+          <div class="table-wrap"><table><thead><tr><th>Label</th><th>Bin</th></tr></thead>
+            <tbody id="binMappingRows"></tbody></table></div>
+          <div class="actions"><button id="resetBinsButton" class="small">Reset to defaults</button></div>
+        </details>
+      <label>Compute backend
+        <select id="backend">
+          <option value="webgl" selected>WebGL (GPU) – fastest on most devices</option>
+          <option value="wasm">WebAssembly (CPU) – most reliable on old GPUs</option>
+          <option value="cpu">Plain JavaScript (CPU) – very slow, reference only</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button id="loadModelButton">Load model</button>
+      </div>
+      <div class="grid two">
+        <label>Device ID <input id="deviceId" value="team01-tablet01"></label>
+        <label>Confidence threshold <input id="threshold" type="number" min="0.1" max="1" step="0.05" value="0.6"></label>
+        <label>Stable frames <input id="stableFrames" type="number" min="1" max="20" value="3"></label>
+        <label>Publish cooldown (ms) <input id="cooldown" type="number" min="500" step="500" value="5000"></label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>MQTT test</h2>
+      <div class="grid two">
+        <label>Broker WebSocket URL <input id="brokerUrl" inputmode="url" value="wss://broker.hivemq.com:8884/mqtt"
+          placeholder="broker.hivemq.com:8884/mqtt"></label>
+        <label>Publish topic <input id="mqttTopic" value="prog6002/2026/team01-tablet01/classification"></label>
+      </div>
+      <p class="help"><code>wss://</code> is added automatically if the URL has no scheme.</p>
+      <div class="location-fields">
+        <label class="inline"><input id="includeLocation" type="checkbox"> Include GPS location in messages</label>
+        <label>Location precision
+          <select id="locationPrecision">
+            <option value="5">Precise (≈1 m)</option>
+            <option value="4" selected>≈10 m</option>
+            <option value="3">≈100 m</option>
+            <option value="2">≈1 km</option>
+          </select>
+        </label>
+        <p class="help">The browser asks for permission the first time. Tablets without GPS may use Wi-Fi positioning, which is
+          less accurate. With no fix yet (or switched off) messages contain <code>"location": null</code>. Only publish
+          location when there is a documented need, and use the coarsest precision that meets it.</p>
+      </div>
+      <details>
+        <summary>Optional broker credentials</summary>
+        <div class="grid two">
+          <label>Username <input id="mqttUsername" autocomplete="username"></label>
+          <label>Password <input id="mqttPassword" type="password" autocomplete="current-password"></label>
+        </div>
+        <label class="inline"><input id="rememberPassword" type="checkbox"> Remember password on this device</label>
+        <p class="help">Browser credentials are visible to the user. Use a restricted classroom account, never an administrator account.
+          A remembered password is stored unencrypted in this browser; only tick this on a device you control.
+          Unticking removes it immediately.</p>
+      </details>
+      <div class="actions">
+        <button id="mqttButton">Connect MQTT</button>
+        <button id="saveButton">Save on this tablet</button>
+      </div>
+
+      <div class="grid two mqtt-tests">
+        <div>
+          <h3>Publish</h3>
+          <label>Message (JSON or plain text; blank = sample classification)
+            <textarea id="testMessage" rows="4" placeholder='{"hello":"world"}'></textarea>
+          </label>
+          <div class="actions">
+            <button id="testButton" disabled>Publish test message</button>
+          </div>
+        </div>
+        <div>
+          <h3>Subscribe</h3>
+          <label>Subscribe topic (wildcards + and # allowed)
+            <input id="subscribeTopic" value="prog6002/2026/team01-tablet01/#">
+          </label>
+          <div class="actions">
+            <button id="subscribeButton" disabled>Subscribe</button>
+            <button id="clearReceivedButton">Clear received</button>
+          </div>
+        </div>
+      </div>
+      <h3>Received messages <span id="receivedCount" class="count">0</span></h3>
+      <ol id="receivedLog" class="log received"></ol>
+    </section>
+
+    <section class="grid two">
+      <article class="panel status-panel">
+        <h2>System state</h2>
+        <dl>
+          <div><dt>Model</dt><dd id="modelStatus">Not loaded</dd></div>
+          <div><dt>Backend</dt><dd id="backendStatus">—</dd></div>
+          <div><dt>Detected object</dt><dd id="detectedStatus">—</dd></div>
+          <div><dt>Camera</dt><dd id="cameraStatus">Stopped</dd></div>
+          <div><dt>MQTT</dt><dd id="mqttStatus">Disconnected</dd></div>
+          <div><dt>Location</dt><dd id="locationStatus">Off</dd></div>
+          <div><dt>Subscribed</dt><dd id="subscribedStatus">—</dd></div>
+          <div><dt>Published</dt><dd id="publishedCount">0</dd></div>
+          <div><dt>Inference</dt><dd id="inferenceTime">—</dd></div>
+        </dl>
+      </article>
+      <article class="panel">
+        <h2>Last MQTT payload</h2>
+        <pre id="payloadPreview">No message published.</pre>
+      </article>
+    </section>
+  </main>
+
+  <footer>CopyRight (C) by Vinh Bui (vinh.bui@scu.edu.au)<br>Classification runs locally in the browser. Images are not sent through MQTT by this sample.</footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/tf-backend-wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
+  <script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
+  <script src="bins.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

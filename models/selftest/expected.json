@@ -1,0 +1,94 @@
+{
+  "default": {
+    "plastic.jpg": {
+      "label": "plastic",
+      "probabilities": {
+        "battery": 0,
+        "biological": 0,
+        "cardboard": 0,
+        "clothes": 0,
+        "glass": 0,
+        "metal": 0,
+        "paper": 0,
+        "plastic": 1,
+        "shoes": 0,
+        "trash": 0
+      }
+    },
+    "glass.jpg": {
+      "label": "glass",
+      "probabilities": {
+        "battery": 0,
+        "biological": 0,
+        "cardboard": 0,
+        "clothes": 0,
+        "glass": 1,
+        "metal": 0,
+        "paper": 0,
+        "plastic": 0,
+        "shoes": 0,
+        "trash": 0
+      }
+    },
+    "metal.jpg": {
+      "label": "metal",
+      "probabilities": {
+        "battery": 0,
+        "biological": 0,
+        "cardboard": 0,
+        "clothes": 0,
+        "glass": 0,
+        "metal": 1,
+        "paper": 0,
+        "plastic": 0,
+        "shoes": 0,
+        "trash": 0
+      }
+    }
+  },
+  "lite": {
+    "plastic.jpg": {
+      "label": "plastic",
+      "probabilities": {
+        "cardboard": 0,
+        "glass": 0.0003,
+        "metal": 0,
+        "paper": 0,
+        "plastic": 0.9997,
+        "trash": 0
+      }
+    },
+    "glass.jpg": {
+      "label": "metal",
+      "probabilities": {
+        "cardboard": 0.0002,
+        "glass": 0.3339,
+        "metal": 0.5837,
+        "paper": 0.0014,
+        "plastic": 0.0807,
+        "trash": 0
+      }
+    },
+    "metal.jpg": {
+      "label": "metal",
+      "probabilities": {
+        "cardboard": 0.0026,
+        "glass": 0.2703,
+        "metal": 0.4124,
+        "paper": 0.086,
+        "plastic": 0.2184,
+        "trash": 0.0103
+      }
+    }
+  },
+  "detector": {
+    "plastic.jpg": {
+      "label": "bottle",
+      "score": 0.714
+    },
+    "glass.jpg": {
+      "label": "bottle",
+      "score": 0.924
+    }
+  }
+}

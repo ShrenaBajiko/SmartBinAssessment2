@@ -1,0 +1,18 @@
+{
+  "labels": [
+    "cardboard",
+    "glass",
+    "metal",
+    "paper",
+    "plastic",
+    "trash"
+  ],
+  "modelName": "waste-mobilenetv2-0.5-160",
+  "architecture": "MobileNetV2 alpha=0.5, input 160x160x3",
+  "normalization": "-1to1",
+  "dataset": "TrashNet (MIT) https://huggingface.co/datasets/garythung/trashnet",
+  "testAccuracy": 0.8602,
+  "params": 713910,
+  "format": "layers-model",
+  "resize": "crop"
+}

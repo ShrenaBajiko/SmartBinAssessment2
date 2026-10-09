@@ -1,0 +1,682 @@
+<!doctype html>
+<!--
+  SCU Smart Waste Dashboard: STARTER PROTOTYPE for PROG6002 students.
+
+  How the pieces fit together
+  ---------------------------
+    index.html + app.js     the tablet "terminal": classifies rubbish and PUBLISHES MQTT messages
+    dashboard.html + .js    this page: SUBSCRIBES to those messages and displays them
+    bins.js                 shared list of bins (names, colours) used by both pages
+
+  This file is only the page STRUCTURE (the boxes). Look for the numbered "SECTION" comments below; every
+  box has an id that dashboard.js fills in. To add a widget: (1) add a <section> here, (2) write a render
+  function in dashboard.js, (3) call it from renderAll().
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SCU Smart Waste Dashboard</title>
+
+  <!-- Leaflet: a small open-source map library. Tiles come from OpenStreetMap. Docs: https://leafletjs.com -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+
+  <style>
+    /* ---- Theme: change these colours to restyle the whole page ---- */
+    :root {
+      --bg:#f2f5f7; --card:#ffffff; --ink:#163247; --muted:#5b6f7e; --line:#dce6eb; --brand:#123047;
+      --ok:#12a150; --warn:#e8a200; --bad:#d92d20; --off:#98a2b3;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+    header { background:var(--brand); color:#fff; padding:12px 20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; }
+    header h1 { margin:0; font-size:20px; }
+    .eyebrow { display:block; font-size:11px; letter-spacing:.1em; opacity:.7; }
+    main { padding:16px 20px 32px; display:grid; gap:16px; max-width:1300px; margin:0 auto; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+    .panel h2 { margin:0 0 10px; font-size:16px; }
+    .grid { display:grid; gap:16px; }
+    .cols-2 { grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); }
+    .cols-4 { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+    .cols-kpi { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+    label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
+    input, select, button { font:inherit; padding:6px 9px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); }
+    button { cursor:pointer; } button:hover { background:#eef3f6; }
+    button.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+    .toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+    .toolbar .grow { flex:1 1 240px; }
+    .pill { padding:4px 12px; border-radius:99px; font-size:13px; font-weight:600; background:var(--off); color:#fff; }
+    .pill.ok { background:var(--ok); } .pill.warn { background:var(--warn); } .pill.bad { background:var(--bad); }
+    .help { color:var(--muted); font-size:12px; margin:6px 0 0; }
+    code { background:#eef3f6; padding:1px 4px; border-radius:4px; font-size:12px; }
+
+    /* KPI tiles */
+    .kpi { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+    .kpi span { font-size:12px; color:var(--muted); }
+    .kpi strong { display:block; font-size:26px; line-height:1.2; }
+
+    /* Bin cards (SECTION 3). The coloured stripe uses the colour from bins.js. */
+    .bin-card { background:var(--card); border:1px solid var(--line); border-top:8px solid var(--line); border-radius:10px; padding:12px 14px; }
+    .bin-card h3 { margin:0; font-size:15px; }
+    .bin-card .sub { font-size:12px; color:var(--muted); min-height:32px; }
+    .gauge { height:14px; background:#e6edf1; border-radius:7px; overflow:hidden; margin:8px 0 4px; }
+    .gauge > div { height:100%; width:0; transition:width .4s, background .4s; }
+    .bin-card .row { display:flex; justify-content:space-between; font-size:13px; }
+    .state { font-weight:700; }
+    .state.ok { color:var(--ok); } .state.warn { color:#a87500; } .state.bad { color:var(--bad); }
+
+    #map { height:380px; border-radius:8px; border:1px solid var(--line); }
+    .note-empty { color:var(--muted); font-style:italic; }
+
+    /* Simple bar rows used for "top items" and per-bin counts */
+    .barrow { display:grid; grid-template-columns:110px 1fr 40px; gap:8px; align-items:center; margin:4px 0; font-size:13px; }
+    .bar { height:12px; background:#e6edf1; border-radius:6px; overflow:hidden; }
+    .bar > div { height:100%; background:var(--brand); }
+
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); }
+    th { color:var(--muted); font-weight:600; font-size:12px; }
+    .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; background:var(--off); }
+    .dot.ok { background:var(--ok); } .dot.bad { background:var(--bad); }
+    .tablewrap { overflow-x:auto; }
+    #rawLog { max-height:220px; overflow:auto; margin:0; padding-left:18px; font:12px/1.4 ui-monospace,Consolas,monospace; }
+    footer { text-align:center; color:var(--muted); font-size:12px; padding:0 0 20px; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0f1a22; --card:#182632; --ink:#e6eef3; --muted:#9db0bd; --line:#2a3d4b; --brand:#2b6d94; }
+      input, select, button { background:#20323f; }
+      button:hover { background:#28404f; } .gauge, .bar { background:#2a3d4b; } code { background:#20323f; }
+    }
+    .bin-popup {
+  width: 220px;
+}
+
+.bin-popup-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.bin-popup-header span {
+  color: #667085;
+  font-size: 11px;
+}
+
+.popup-chart-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 9px 0;
+}
+
+.popup-bar-track {
+  flex: 1;
+  height: 14px;
+  background: #eef2f6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.popup-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.popup-chart-row strong {
+  width: 40px;
+  text-align: right;
+  font-size: 12px;
+}
+
+.device-row {
+  cursor: pointer;
+}
+
+.device-row:hover,
+.device-row:focus-visible {
+  background: #f0f6fb;
+}
+
+.device-row.selected {
+  background: #e0eef9;
+}
+
+.device-row.selected td:first-child {
+  box-shadow: inset 3px 0 #2563eb;
+  font-weight: 700;
+}
+
+.fleet-alerts {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.fleet-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.fleet-alert-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+}
+
+.fleet-alert.full {
+  background: #b42318;
+  color: white;
+}
+
+.fleet-alert.warning {
+  background: #fffaeb;
+  color: #713b12;
+  border: 1px solid #fedf89;
+}
+
+.fleet-alert.warning .fleet-alert-icon {
+  color: #b77900;
+}
+
+.fleet-alert.stale {
+  background: #f2f4f7;
+  color: #475467;
+}
+
+.fleet-alert-device {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.fleet-alert-device:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+#fleetAlerts {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+#fleetAlerts .fleet-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+#fleetAlerts .fleet-alert.full {
+  background: #b42318;
+  color: #ffffff;
+}
+
+#fleetAlerts .fleet-alert.warning {
+  background: #fffaeb;
+  color: #713b12;
+  border: 1px solid #fedf89;
+}
+
+#fleetAlerts .warning .fleet-alert-icon {
+  color: #b77900;
+}
+
+#fleetAlerts .fleet-alert.stale {
+  background: #f2f4f7;
+  color: #475467;
+}
+
+#fleetAlerts .fleet-alert-icon {
+  flex-shrink: 0;
+  font-size: 20px;
+}
+
+#fleetAlerts .fleet-alert-device {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+#fleetAlerts .fleet-alert-device:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.alert-panel {
+  margin-bottom: 18px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  overflow: hidden;
+  background: white;
+}
+
+.alert-panel > summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  color: #344054;
+  background: white;
+}
+
+.alert-panel.has-warning {
+  border-color: #fedf89;
+}
+
+.alert-panel.has-warning > summary {
+  background: #fffaeb;
+  color: #713b12;
+}
+
+.alert-panel.has-full {
+  border-color: #b42318;
+}
+
+.alert-panel.has-full > summary {
+  background: #b42318;
+  color: white;
+}
+
+.alert-panel #fleetAlerts {
+  margin: 0;
+  padding: 12px;
+}
+
+.alert-panel #fleetAlerts:empty {
+  display: none;
+}
+
+.alert-panel > summary:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -3px;
+}
+
+.device-alert-group {
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.device-alert-group > summary,
+.device-alert-heading {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  background: #f2f4f7;
+  color: #475467;
+}
+
+.device-alert-group > summary {
+  cursor: pointer;
+}
+
+.device-alert-group.full > summary,
+.device-alert-group.full > .device-alert-heading {
+  background: #b42318;
+  color: white;
+}
+
+.device-alert-group.warning > summary,
+.device-alert-group.warning > .device-alert-heading {
+  background: #fffaeb;
+  color: #713b12;
+}
+
+.device-alert-content {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.device-alert-content > .fleet-alert-device {
+  justify-self: start;
+}
+
+.history-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.history-controls label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.fill-history-panel {
+  background: #ffffff;
+  border: 1px solid #dce6ed;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 6px rgba(18, 48, 71, 0.04);
+}
+
+.fill-history-panel h2 {
+  margin-top: 0;
+}
+
+.collection-route-panel {
+  background: white;
+  border: 1px solid #dce6ed;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.collection-route-panel h2 {
+  margin-top: 0;
+}
+
+#routeStops {
+  padding-left: 24px;
+}
+
+#routeStops li {
+  padding: 10px 0;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.route-stop-button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #123047;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.route-stop-detail,
+.route-note {
+  color: #667085;
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+#calculateRoute {
+  margin-bottom: 12px;
+}
+
+#routeLocationDialog {
+  width: min(400px, calc(100vw - 48px));
+  padding: 24px;
+  border: 1px solid #dce6ed;
+  border-radius: 16px;
+  color: #123047;
+}
+
+#routeLocationDialog::backdrop {
+  background: rgba(18, 48, 71, 0.4);
+}
+
+#routeLocationForm label {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+}
+
+#routeLocationForm input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+#driverLocationNote {
+  font-size: 12px;
+  color: #667085;
+}
+
+.route-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+#routeStops {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 0;
+  margin: 16px 0;
+  list-style: none;
+  counter-reset: pickup;
+}
+
+#routeStops li {
+  counter-increment: pickup;
+  position: relative;
+  padding: 16px 16px 16px 48px;
+  background: #f8fafc;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+}
+
+#routeStops li::before {
+  content: counter(pickup);
+  position: absolute;
+  left: 12px;
+  top: 14px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: #e0eef9;
+  color: #123047;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#routeSummary {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+@media (max-width: 500px) {
+  #routeStops {
+    grid-template-columns: 1fr;
+  }
+}
+  </style>
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">PROG6002 · STARTER PROTOTYPE</span><h1>SCU Smart Waste Dashboard</h1></div>
+    <div id="mqttStatus" class="pill">Disconnected</div>
+  </header>
+
+  <main>
+    <!-- ============ SECTION 1: MQTT connection + controls ============
+         The broker URL and topic are the two things that must match what the tablet (index.html) uses.
+         "Simulate" feeds fake messages through the same code path so you can build the dashboard
+         without a tablet or bins. -->
+    <section class="panel">
+      <div class="toolbar">
+        <label class="grow">Broker WebSocket URL <input id="brokerUrl"></label>
+        <label class="grow">Subscribe topic(s), comma separated <input id="topicFilter"></label>
+        <button id="connectButton" class="primary">Connect</button>
+        <button id="simButton">Start simulator</button>
+        <button id="resetButton">Reset data</button>
+        <label>Show device
+          <select id="deviceSelect"><option value="">All devices</option></select>
+        </label>
+      </div>
+      <p class="help">Use the same topic as the tablet's <em>Publish topic</em>. <code>+</code> matches one topic level and
+        <code>#</code> matches everything below, e.g. <code>prog6002/2026/+/classification</code> listens to every team.
+        On a public broker anyone can publish to your topic, so treat all incoming data as untrusted.</p>
+    </section>
+
+    <!-- ============ SECTION 2: headline numbers (KPIs) ============ -->
+    <section class="grid cols-kpi" id="kpis"></section>
+
+    <!-- ============ SECTION 3: bin status and level of each bin ============ -->
+     <details id="fleetAlertPanel" class="alert-panel">
+        <summary id="fleetAlertSummary">0 Alerts</summary>
+        <section id="fleetAlerts" class="fleet-alerts" aria-label="Fleet alerts"></section>
+    </details>
+    <section class="grid cols-4" id="binCards"></section>
+
+    <!-- ============ SECTION 4: map + device list ============ -->
+    <section class="grid cols-2">
+      <article class="panel">
+        <h2>Bin locations</h2>
+        <button id="calculateRoute" type="button">
+  Calculate collection route
+</button>
+
+<dialog id="routeLocationDialog">
+  <form id="routeLocationForm">
+    <h2>Driver starting location</h2>
+
+    <button id="useDriverGPS" type="button">
+      Use my current location
+    </button>
+
+    <p id="driverLocationNote">
+      Or enter the driver's coordinates below.
+    </p>
+
+    <label>
+      Latitude
+      <input id="driverLatitude" type="number"
+             min="-90" max="90" step="any" required>
+    </label>
+
+    <label>
+      Longitude
+      <input id="driverLongitude" type="number"
+             min="-180" max="180" step="any" required>
+    </label>
+
+    <div class="route-dialog-actions">
+      <button id="cancelRoute" type="button">Cancel</button>
+      <button type="submit">Calculate</button>
+    </div>
+  </form>
+</dialog>
+        <div id="map"></div>
+        <p id="mapNote" class="help"></p>
+      </article>
+      <article class="panel">
+        <h2>Devices</h2>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Device</th><th>Status</th><th>Last seen</th><th>Items</th><th>Fullest bin</th><th>Location</th></tr></thead>
+          <tbody id="deviceRows"></tbody>
+        </table></div>
+      </article>
+    </section>
+
+    <section id="collectionRoutePanel" class="collection-route-panel" hidden>
+  <h2>Collection route</h2>
+  <p id="routeSummary">Waiting for bin data.</p>
+
+  <ol id="routeStops"></ol>
+
+ <p class="route-note">
+  Rough estimate using straight-line distance, an assumed average
+  speed of 30 km/h and 3 minutes per pickup stop.
+  Includes return to the driver’s starting location.
+  Roads, traffic and access delays are not included.
+</p>
+</section>
+
+    <!-- ============ SECTION 5: statistics about rubbish collected ============ -->
+     <section class="card fill-history-panel">
+  <h2>Fill history & prediction</h2>
+
+  <div class="history-controls">
+    <label>
+  Device
+  <select id="historyDevice">
+    <option value="">Select a device</option>
+  </select>
+</label>
+    <label>
+      Compartment
+      <select id="historyCompartment"></select>
+    </label>
+
+    <label>
+      History
+      <select id="historyRange">
+        <option value="1">Last hour</option>
+        <option value="24" selected>Last 24 hours</option>
+        <option value="168">Last 7 days</option>
+      </select>
+    </label>
+  </div>
+
+  <p id="predictionSummary">Select a device to view its history.</p>
+
+  <div style="position: relative; height: 300px;">
+    <canvas id="fillHistoryChart"></canvas>
+  </div>
+
+  <p style="font-size: 12px; color: #667085;">
+    Dashed lines are estimates based on recent readings.
+    A substantial fill-level drop starts a new prediction cycle.
+  </p>
+</section>
+
+    <section class="grid cols-2">
+      <article class="panel"><h2>Items per bin</h2><div id="binCounts"></div></article>
+      <article class="panel"><h2>Most common items</h2><div id="topItems"></div></article>
+      <article class="panel">
+        <h2>Activity: items per minute (last <span id="timelineMinutes"></span> min)</h2>
+        <div id="timeline"></div>
+      </article>
+      <article class="panel">
+        <h2>Latest classifications</h2>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Time</th><th>Device</th><th>Item</th><th>Bin</th><th>Conf.</th></tr></thead>
+          <tbody id="recentRows"></tbody>
+        </table></div>
+      </article>
+    </section>
+
+    <!-- ============ SECTION 6: raw messages, for debugging ============
+         When something does not display, look here first: is the message arriving, and does its JSON have the
+         fields dashboard.js expects? -->
+    <section class="panel">
+      <h2>Raw MQTT messages (debug)</h2>
+      <ol id="rawLog"></ol>
+    </section>
+  </main>
+
+  <footer>Prototype for teaching. Extend it: history charts, alerts, collection routes, saved data&hellip; See the TODO ideas in dashboard.js.</footer>
+
+  <!-- Scripts. Order matters: libraries first, then bins.js (defines BINS), then our code. -->
+  <script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="bins.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "labels": ["battery", "biological", "cardboard", "clothes", "glass", "metal", "paper", "plastic", "shoes", "trash"],
+  "modelName": "ecovision-mobilenetv3-large",
+  "architecture": "MobileNetV3-Large, input 224x224x3",
+  "format": "graph-model",
+  "normalization": "0to255",
+  "resize": "stretch",
+  "params": 4214842,
+  "source": "https://huggingface.co/AmadFR/ecovision_mobilenetv3",
+  "author": "AmadFR",
+  "license": "MIT",
+  "conversion": "PyTorch -> ONNX -> onnx2tf -> TF.js graph model (float16). ImageNet mean/std normalisation and softmax are built into the graph. See tools/convert_ecovision.py."
+}
