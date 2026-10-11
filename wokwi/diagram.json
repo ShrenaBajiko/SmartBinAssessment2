@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "author": "Anonymous maker",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-pi-pico-w",
+      "id": "pico",
+      "top": -3.25,
+      "left": 3.55,
+      "attrs": { "env": "micropython-20260406-v1.28.0" }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "ultrasonic1",
+      "top": -94.5,
+      "left": 72.7,
+      "attrs": { "distance": "41" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo1",
+      "top": -98,
+      "left": -163.2,
+      "attrs": { "hornColor": "blue" }
+    }
+  ],
+  "connections": [
+    [ "ultrasonic1:VCC", "pico:VBUS", "red", [ "v0" ] ],
+    [ "ultrasonic1:TRIG", "pico:GP28", "green", [ "v0" ] ],
+    [ "ultrasonic1:ECHO", "pico:GP26", "green", [ "v0" ] ],
+    [ "ultrasonic1:GND", "pico:GND.8", "black", [ "v0" ] ],
+    [ "servo1:GND", "pico:GND.2", "black", [ "h0" ] ],
+    [ "servo1:PWM", "pico:GP11", "green", [ "h0" ] ],
+    [ "servo1:V+", "pico:VBUS", "green", [ "h0" ] ]
+  ],
+  "dependencies": {}
+}

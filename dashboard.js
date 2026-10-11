@@ -56,12 +56,12 @@ const $ = (id) => document.getElementById(id);
    ===================================================================================================== */
 const CONFIG = {
   // Must match the tablet (index.html): "Broker WebSocket URL". Browsers need wss:// (or ws:// on http pages).
-  brokerUrl: "wss://9a8151b644b74dc1b579dc3e05d4f35e.s1.eu.hivemq.cloud:8884/mqtt",
+  brokerUrl: "wss://broker.hivemq.com:8884/mqtt",
 
   // Must match (or be a wildcard of) the tablet's "Publish topic". Separate several topics with commas.
   // "prog6002/2026/team01-tablet01/#"  everything below one device's topic
   // "prog6002/2026/+/classification"   the classification topic of every device (+ = any one level)
-  topicFilter: "bins/#",
+  topicFilter: "prog6002/2026/team01-tablet01/#",
 
   // Only used when a bin has NOT reported a measured level: how many items fill one bin (estimate).
   // Keys must exist in BINS (bins.js). Add a key here if you add a bin there.
@@ -132,8 +132,6 @@ function connect() {
   // Add { username, password } here if your broker needs credentials (see the tablet's "Optional broker credentials").
   client = mqtt.connect(url, { 
     clientId: "dashboard-" + Math.random().toString(16).slice(2, 10), 
-    username: "user1",
-    password: "Password",
     clean: true, 
     reconnectPeriod: 3000, 
     connectTimeout: 10000 });
@@ -170,6 +168,7 @@ function handleMessage(topic, text) {
   switch (msg.message_type) {
     case "waste_classification": handleClassification(msg); break;
     case "bin_status":           handleBinStatus(msg); break;
+    case "warning":              handleWarning(msg); break;   //warning
     // case "my_new_type":       handleMyNewType(msg); break;    // <- your own message types go here
     default: break;                                              // unknown type: ignore it, never crash on it
   }
@@ -221,6 +220,37 @@ function handleBinStatus(msg) {
       recordFillReading(dev.id, bin, info.level_pct);
     }
   }
+}
+
+function handleWarning(msg) {
+    touchDevice(msg);
+    const event = msg.event || "unknown";
+    const fillPct = Number.isFinite(msg.fill_pct) ? msg.fill_pct : 0;
+    
+    // Only show banner for lid_refused_full
+    // (bin_full is already shown in Fleet Alerts panel)
+    if (event === "lid_refused_full") {
+        const item = msg.attempted_item || "item";
+        const text = "LID REFUSED: Bin " + fillPct + "% full - someone tried to dispose: " + item;
+        showWarningBanner(text);
+    }
+    console.warn("Warning:", event, msg);
+}
+
+function showWarningBanner(text, type) {
+    const existing = document.getElementById("warningBanner");
+    if (existing) existing.remove();
+    
+    const banner = document.createElement("div");
+    banner.id = "warningBanner";
+    banner.style.cssText = "position:fixed;top:0;left:0;right:0;padding:16px 20px;text-align:center;font-size:16px;font-weight:700;color:white;background:#b42318;z-index:9999;box-shadow:0 2px 10px rgba(0,0,0,0.3);cursor:pointer;";
+    banner.textContent = "🚨 " + text + " (click to dismiss)";
+    banner.onclick = function() { banner.remove(); };
+    
+    document.body.prepend(banner);
+    setTimeout(function() {
+        if (banner.parentNode) banner.remove();
+    }, 15000);
 }
 
 /* =====================================================================================================
